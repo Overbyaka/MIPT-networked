@@ -117,7 +117,7 @@ int main(int argc, const char **argv)
         send_snapshot(peer, e.eid, e.x, e.y, e.ori);
       }
     }
-    usleep(100000);
+    Sleep(100000);
   }
 
   enet_host_destroy(server);

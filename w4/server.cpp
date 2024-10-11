@@ -8,17 +8,18 @@
 
 static std::vector<Entity> entities;
 static std::map<uint16_t, ENetPeer*> controlledMap;
+static std::map<uint16_t, size_t> scoreMap;
 
 static uint16_t create_random_entity()
 {
   uint16_t newEid = entities.size();
-  uint32_t color = 0xff000000 +
+  uint32_t color = 0x000000ff +
                    0x00440000 * (1 + rand() % 4) +
                    0x00004400 * (1 + rand() % 4) +
-                   0x00000044 * (1 + rand() % 4);
+                   0x44000000 * (1 + rand() % 4);
   float x = (rand() % 40 - 20) * 5.f;
   float y = (rand() % 40 - 20) * 5.f;
-  Entity ent = {color, x, y, newEid, false, 0.f, 0.f};
+  Entity ent = { color, x, y, newEid, false, 0.f, 0.f, 10 + rand() % 20 };
   entities.push_back(ent);
   return newEid;
 }
@@ -32,13 +33,17 @@ void on_join(ENetPacket *packet, ENetPeer *peer, ENetHost *host)
   // find max eid
   uint16_t newEid = create_random_entity();
   const Entity& ent = entities[newEid];
+  scoreMap[newEid] = ent.size;
 
   controlledMap[newEid] = peer;
 
 
   // send info about new entity to everyone
-  for (size_t i = 0; i < host->peerCount; ++i)
-    send_new_entity(&host->peers[i], ent);
+  for (size_t i = 0; i < host->connectedPeers; ++i)
+      send_new_entity(&host->peers[i], ent);
+
+  for (size_t i = 0; i < host->connectedPeers; ++i)
+      send_scores(&host->peers[i], scoreMap);
   // send info about controlled entity
   send_set_controlled_entity(peer, newEid);
 }
@@ -46,13 +51,14 @@ void on_join(ENetPacket *packet, ENetPeer *peer, ENetHost *host)
 void on_state(ENetPacket *packet)
 {
   uint16_t eid = invalid_entity;
-  float x = 0.f; float y = 0.f;
-  deserialize_entity_state(packet, eid, x, y);
+  float x = 0.f; float y = 0.f; size_t size;
+  deserialize_entity_state(packet, eid, x, y, size);
   for (Entity &e : entities)
     if (e.eid == eid)
     {
       e.x = x;
       e.y = y;
+      e.size = size;
     }
 }
 
@@ -83,6 +89,7 @@ int main(int argc, const char **argv)
     uint16_t eid = create_random_entity();
     entities[eid].serverControlled = true;
     controlledMap[eid] = nullptr;
+    scoreMap[eid] = entities[eid].size;
   }
 
   uint32_t lastTime = enet_time_get();
@@ -133,13 +140,45 @@ int main(int argc, const char **argv)
         }
       }
     }
+
+    for (int i = 0; i < entities.size() - 1; ++i)
+    {
+        for (int j = i + 1; j < entities.size(); ++j)
+        {
+            if (fabsf(entities[i].x + entities[i].size / 2.0f - entities[j].x - entities[j].size / 2.0f) < (entities[i].size + entities[j].size) / 2.0f
+                && fabsf(entities[i].y + entities[i].size / 2.0f - entities[j].y - entities[j].size / 2.0f) < (entities[i].size + entities[j].size) / 2.0f)
+            {
+                if (entities[i].size > entities[j].size)
+                {
+                    entities[i].size += entities[j].size / 2;
+                    entities[j].size /= 2;
+                    entities[j].x = (rand() % 40 - 20) * 15.f;
+                    entities[j].y = (rand() % 40 - 20) * 15.f;
+                }
+                else if (entities[j].size > entities[i].size)
+                {
+                    entities[j].size += entities[i].size / 2;
+                    entities[i].size /= 2;
+                    entities[i].x = (rand() % 40 - 20) * 15.f;
+                    entities[i].y = (rand() % 40 - 20) * 15.f;
+                }
+
+                scoreMap[entities[i].eid] = entities[i].size;
+                scoreMap[entities[j].eid] = entities[j].size;
+
+                for (size_t i = 0; i < server->connectedPeers; ++i)
+                    send_scores(&server->peers[i], scoreMap);
+            }
+        }
+    }
+
     for (const Entity &e : entities)
     {
-      for (size_t i = 0; i < server->peerCount; ++i)
+        for (size_t i = 0; i < server->connectedPeers; ++i)
       {
         ENetPeer *peer = &server->peers[i];
         if (controlledMap[e.eid] != peer)
-          send_snapshot(peer, e.eid, e.x, e.y);
+            send_snapshot(peer, e);
       }
     }
     //usleep(400000);
