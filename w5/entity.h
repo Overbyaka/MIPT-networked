@@ -13,7 +13,17 @@ struct Entity
   float thr = 0.f;
   float steer = 0.f;
 
+  uint32_t timeTick = 0;
+
   uint16_t eid = invalid_entity;
+};
+
+struct Snapshot
+{
+    float x = 0.f;
+    float y = 0.f;
+    float ori = 0.f;
+    uint32_t timeTick = 0;
 };
 
 void simulate_entity(Entity &e, float dt);
